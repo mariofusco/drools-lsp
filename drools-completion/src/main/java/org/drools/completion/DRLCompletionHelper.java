@@ -28,7 +28,6 @@ import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.services.LanguageClient;
-import org.eclipse.lsp4j.services.LanguageServer;
 
 import static org.drools.parser.DRLParserHelper.createDrlParser;
 import static org.drools.parser.DRLParserHelper.findNodeAtPosition;
@@ -49,6 +48,7 @@ public class DRLCompletionHelper {
 
         ParseTree parseTree = drlParser.compilationunit();
         ParseTree node = caretPosition == null ? null : findNodeAtPosition(parseTree, row, col);
+        // TODO Fix NPE if caretPosition/node are null
         client.showMessage(new MessageParams(MessageType.Info, "node = " + node));
 
         List<CompletionItem> completionItems = getCompletionItems(drlParser, node);
@@ -72,6 +72,7 @@ public class DRLCompletionHelper {
 
     static List<CompletionItem> getCompletionItems(DRLParser drlParser, ParseTree node) {
         CodeCompletionCore core = new CodeCompletionCore(drlParser, null, null);
+        // TODO Fix NPE if node is null
         CodeCompletionCore.CandidatesCollection candidates = core.collectCandidates(getNodeIndex(node), drlParser.getRuleContext());
 
         return candidates.tokens.keySet().stream().filter(Objects::nonNull )

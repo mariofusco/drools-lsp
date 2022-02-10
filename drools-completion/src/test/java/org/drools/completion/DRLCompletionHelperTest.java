@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
-import junit.framework.TestCase;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.Diagnostic;
@@ -15,31 +14,34 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.services.LanguageClient;
+import org.junit.Ignore;
+import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 
-public class DRLCompletionHelperTest extends TestCase {
+public class DRLCompletionHelperTest {
 
+    @Ignore
+    @Test
     public void testGetCompletionItems() {
-
+        // TODO
+        String text = "rule MyRule when Dog(name == \"Bart\") then end";
         CompletionParams completionParams = new CompletionParams();
         completionParams.setTextDocument(new TextDocumentIdentifier("myDocument"));
-        String text = "suggestion";
-
-        Position caretPosition = completionParams.getPosition();
+        Position caretPosition = new Position();
+        caretPosition.setCharacter(0);
+        caretPosition.setLine(-1); // -1 needed because of  int row = caretPosition == null ? -1 : caretPosition
+        // .getLine()+1; // caret line position is zero based
+        completionParams.setPosition(caretPosition);
 
         List<CompletionItem> result = DRLCompletionHelper.getCompletionItems(text, caretPosition, getLanguageClient());
         CompletionItem completionItem = result.get(0);
         assertEquals("suggestion", completionItem.getInsertText());
     }
 
+    @Test
     public void testTestGetCompletionItems() {
-    }
-
-    public void testCreateCompletionItem() {
-    }
-
-    public void testCreateDuplicateTextDummyItem() {
+        // TODO
     }
 
     private LanguageClient getLanguageClient() {
