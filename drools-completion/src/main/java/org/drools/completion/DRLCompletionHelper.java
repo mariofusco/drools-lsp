@@ -24,7 +24,11 @@ import org.antlr.v4.runtime.tree.ParseTree;
 import org.drools.parser.DRLParser;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.services.LanguageClient;
+import org.eclipse.lsp4j.services.LanguageServer;
 
 import static org.drools.parser.DRLParserHelper.createDrlParser;
 import static org.drools.parser.DRLParserHelper.findNodeAtPosition;
@@ -37,7 +41,7 @@ public class DRLCompletionHelper {
     private DRLCompletionHelper() {
     }
 
-    public static List<CompletionItem> getCompletionItems(String text, Position caretPosition) {
+    public static List<CompletionItem> getCompletionItems(String text, Position caretPosition, LanguageClient client) {
         DRLParser drlParser = createDrlParser(text);
 
         int row = caretPosition == null ? -1 : caretPosition.getLine()+1; // caret line position is zero based
@@ -45,6 +49,7 @@ public class DRLCompletionHelper {
 
         ParseTree parseTree = drlParser.compilationunit();
         ParseTree node = caretPosition == null ? null : findNodeAtPosition(parseTree, row, col);
+        client.showMessage(new MessageParams(MessageType.Info, "node = " + node));
 
         List<CompletionItem> completionItems = getCompletionItems(drlParser, node);
 
@@ -60,7 +65,7 @@ public class DRLCompletionHelper {
 
         completionItems.add(completionItem);
 
-//        server.getClient().showMessage(new MessageParams(MessageType.Info, "completionItem=" + completionItem.getLabel()));
+        client.showMessage(new MessageParams(MessageType.Info, "completionItem=" + completionItem.getLabel()));
 
         return completionItems;
     }

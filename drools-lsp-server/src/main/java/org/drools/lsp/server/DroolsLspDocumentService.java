@@ -89,9 +89,10 @@ public class DroolsLspDocumentService implements TextDocumentService {
 
         Position caretPosition = completionParams.getPosition();
 
-        List<CompletionItem> completionItems = DRLCompletionHelper.getCompletionItems(text, caretPosition);
+        List<CompletionItem> completionItems = DRLCompletionHelper.getCompletionItems(text, caretPosition, server.getClient());
 
-//        server.getClient().showMessage(new MessageParams(MessageType.Info, "Position=" + caretPosition));
+        server.getClient().showMessage(new MessageParams(MessageType.Info, "Position=" + caretPosition));
+        server.getClient().showMessage(new MessageParams(MessageType.Info, "completionItems = " + completionItems));
 //        server.getClient().showMessage(new MessageParams(MessageType.Info, "Node = " + node));
 //
 //        Token stop = node instanceof TerminalNode ? ((TerminalNode)node).getSymbol() : ((ParserRuleContext)node).getStop();

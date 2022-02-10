@@ -25,22 +25,16 @@ public class DroolsLspTCPLauncher {
 
     public static void main(String[] args) throws Exception {
         try {
-            Socket clientSocket = new Socket("127.0.0.1", 9925);
-            startServer(clientSocket.getInputStream(), clientSocket.getOutputStream());
-        } catch (IOException | InterruptedException | ExecutionException e) {
+            ServerSocket serverSocket = new ServerSocket(PORT);
+            System.out.println("The chat server is running on PORT " + PORT + ": " + serverSocket);
+            System.out.println("wait for clients to connect");
+            Socket socket = serverSocket.accept();
+            System.out.println("Connected " + socket);
+            startServer(socket.getInputStream(), socket.getOutputStream());
+            socket.close();
+        } catch (IOException e) {
             e.printStackTrace();
         }
-//        try {
-//            ServerSocket serverSocket = new ServerSocket(PORT);
-//            System.out.println("The chat server is running on PORT " + PORT + ": " + serverSocket);
-//            System.out.println("wait for clients to connect");
-//            Socket socket = serverSocket.accept();
-//            System.out.println("Connected " + socket);
-//            startServer(socket.getInputStream(), socket.getOutputStream());
-//            socket.close();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
 //        // Initialize the server
 //        DroolsLspServer server = new DroolsLspServer();
 //        // start the socket server

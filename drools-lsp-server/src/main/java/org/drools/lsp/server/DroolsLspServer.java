@@ -30,15 +30,6 @@ public class DroolsLspServer implements LanguageServer, LanguageClientAware {
         this.client = client;
     }
 
-    /**
-     * Connect the given chat client.
-     * Return a runnable which should be executed to disconnect the client.
-     */
-    public Runnable addClient(LanguageClient client) {
-        this.client = client;
-        return () -> this.client = null;
-    }
-
     public LanguageClient getClient() {
         return client;
     }

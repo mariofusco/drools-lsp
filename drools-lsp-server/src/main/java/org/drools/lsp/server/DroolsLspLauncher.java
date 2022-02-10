@@ -17,7 +17,6 @@ import org.eclipse.lsp4j.services.LanguageClient;
  */
 public class DroolsLspLauncher {
     public static void main(String[] args) throws ExecutionException, InterruptedException {
-        System.out.println("DroolsLspLauncher");
         // As we are using system std io channels
         // we need to reset and turn off the logging globally
         // So our client->server communication doesn't get interrupted.
@@ -37,26 +36,20 @@ public class DroolsLspLauncher {
      * @throws InterruptedException Unable to start the server
      */
     private static void startServer(InputStream in, OutputStream out) throws ExecutionException, InterruptedException {
-
-        System.out.println("startServer ");
         // Initialize the HelloLanguageServer
-        DroolsLspServer server = new DroolsLspServer();
-        System.out.println("DroolsLspServer " + server);
+        DroolsLspServer helloLanguageServer = new DroolsLspServer();
         // Create JSON RPC launcher for HelloLanguageServer instance.
-        Launcher<LanguageClient> launcher = LSPLauncher.createServerLauncher(server, in, out);
-        System.out.println("Launcher<LanguageClient> " + launcher);
+        Launcher<LanguageClient> launcher = LSPLauncher.createServerLauncher(helloLanguageServer, in, out);
 
         // Get the client that request to launch the LS.
         LanguageClient client = launcher.getRemoteProxy();
-        System.out.println("LanguageClient " + client);
 
         // Set the client to language server
-        server.connect(client);
-        System.out.println("Connected");
+        helloLanguageServer.connect(client);
 
         // Start the listener for JsonRPC
         Future<?> startListening = launcher.startListening();
-        System.out.println("Future<?> startListening " + startListening);
+
         // Get the computed result from LS.
         startListening.get();
     }
