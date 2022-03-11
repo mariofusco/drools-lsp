@@ -16,7 +16,6 @@
 package org.drools.completion;
 
 import com.vmware.antlr4c3.CodeCompletionCore;
-import org.antlr.v4.runtime.Token;
 import org.drools.parser.DRLParser;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
@@ -25,7 +24,6 @@ import org.eclipse.lsp4j.services.LanguageClient;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.drools.parser.DRLParserHelper.computeTokenIndex;
@@ -49,12 +47,12 @@ public class DRLCompletionHelper {
     }
 
     static List<CompletionItem> getCompletionItems(DRLParser drlParser, int nodeIndex) {
-        CodeCompletionCore core = new CodeCompletionCore(drlParser, null, Set.of(Token.EPSILON));
+        CodeCompletionCore core = new CodeCompletionCore(drlParser, null, null);
         CodeCompletionCore.CandidatesCollection candidates = core.collectCandidates(nodeIndex, null);
 
         return candidates.tokens.keySet().stream().filter(Objects::nonNull)
-//                .filter( i -> i > 0 && i <= DRLParser.END ) // filter keywords only
-                .map(drlParser.getVocabulary()::getSymbolicName)
+                .filter(integer -> !Tokens.IGNORED.contains(integer))
+                .map(integer -> drlParser.getVocabulary().getDisplayName(integer).replace("'", ""))
                 .map(String::toLowerCase)
                 .map(k -> createCompletionItem(k, CompletionItemKind.Keyword))
                 .collect(Collectors.toList());
