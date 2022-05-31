@@ -52,7 +52,7 @@ public class DroolsLspServer implements LanguageServer, LanguageClientAware {
                 projectRoot = path.getParent();
 
 //                projectClassPathUrls.add(path.getParent().resolve("src/main/java/").toUri().toURL());
-                projectClassPathUrls.add(path.getParent().resolve("target/classes/").toUri().toURL());
+                projectClassPathUrls.add(path.getParent().resolve("target/classes/").toUri().toURL());  // TODO: not the best way - should compile dynamically
 
                 String projectClasspath = new InferConfig(path.getParent()).classPath();
                 for (String p : projectClasspath.split(":"))
