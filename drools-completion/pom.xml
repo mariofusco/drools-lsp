@@ -17,6 +17,18 @@
 
     <dependency>
       <groupId>org.drools</groupId>
+      <artifactId>drools-compiler</artifactId>
+      <version>7.66.0.Final</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.drools</groupId>
+      <artifactId>drools-mvel</artifactId>
+      <version>7.66.0.Final</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.drools</groupId>
       <artifactId>drools-parser</artifactId>
       <version>${project.version}</version>
     </dependency>
