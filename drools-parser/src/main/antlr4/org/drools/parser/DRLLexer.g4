@@ -18,12 +18,13 @@ import JavaLexer;
 // KEYWORDS
 /////////////////
 
-// These keywords duplicate ones in JavaLexer. They should not be overriden with different names, or else Vocabulary's literalName will be null.
-PACKAGE : 'package';
-IMPORT : 'import';
-STATIC : 'static';
-EXTENDS : 'extends';
-SUPER : 'super';
+// These keywords are already declared in JavaLexer. They should not be overriden with different names, or else Vocabulary's literalName will be null.
+// So no need to declare by DRLLexer
+// PACKAGE : 'package';
+// IMPORT : 'import';
+// STATIC : 'static';
+// EXTENDS : 'extends';
+// SUPER : 'super';
 
 // DRL keywords
 DRL_UNIT : 'unit';
