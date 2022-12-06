@@ -14,7 +14,7 @@ import static org.drools.lsp.server.TestHelperMethods.getDroolsLspDocumentServic
 class DroolsLspDocumentServiceTest {
 
     @Test
-    void completion() {
+    void getCompletionItems() {
         DroolsLspDocumentService droolsLspDocumentService = getDroolsLspDocumentService("");
 
         CompletionParams completionParams = new CompletionParams();
@@ -29,7 +29,7 @@ class DroolsLspDocumentServiceTest {
     }
 
     @Test
-    void readRuleName() {
+    void getRuleName() {
         String drl = "rule MyRule when Dog(name == \"Bart\") then end";
 
         DroolsLspDocumentService droolsLspDocumentService = getDroolsLspDocumentService(drl);
@@ -42,7 +42,7 @@ class DroolsLspDocumentServiceTest {
     }
 
     @Test
-    void findLHSandRHS() {
+    void getCompletionItems_findLHSandRHS() {
         String drl =
                 "package org.test;\n" +
                         "import org.test.model.Person;\n" +

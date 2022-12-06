@@ -75,7 +75,7 @@ class LauncherTest {
         server.expectedRequests.put("textDocument/completion", new Pair<>(p, result));
         CompletableFuture<Either<List<CompletionItem>, CompletionList>> future = clientLauncher.getRemoteProxy().getTextDocumentService().completion(p);
         assertThat(future.get(TIMEOUT, TimeUnit.MILLISECONDS).toString()).isEqualTo(Either.forRight(result).toString());
-        client.joinOnEmpty();
+        server.joinOnEmpty();
     }
 
 
@@ -105,7 +105,7 @@ class LauncherTest {
         public void joinOnEmpty() {
             long before = System.currentTimeMillis();
             do {
-                if (expectedNotifications.isEmpty() && expectedNotifications.isEmpty()) {
+                if (expectedRequests.isEmpty() && expectedNotifications.isEmpty()) {
                     return;
                 }
                 try {
