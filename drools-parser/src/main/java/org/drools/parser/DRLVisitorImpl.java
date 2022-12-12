@@ -1,19 +1,19 @@
 package org.drools.parser;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
+import org.antlr.v4.runtime.tree.RuleNode;
 import org.antlr.v4.runtime.tree.TerminalNode;
 import org.drools.drl.ast.descr.AndDescr;
 import org.drools.drl.ast.descr.AnnotationDescr;
 import org.drools.drl.ast.descr.AttributeDescr;
 import org.drools.drl.ast.descr.BaseDescr;
-import org.drools.drl.ast.descr.ConditionalElementDescr;
 import org.drools.drl.ast.descr.ExistsDescr;
 import org.drools.drl.ast.descr.ExprConstraintDescr;
 import org.drools.drl.ast.descr.FromDescr;
@@ -39,13 +39,6 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
 
     private RuleDescr currentRule;
     private PatternDescr currentPattern;
-
-    private final Deque<ConditionalElementDescr> currentConstructStack = new ArrayDeque<>(); // e.g. whole LHS (= AndDescr), NotDescr, ExistsDescr
-
-    @Override
-    public Object visitCompilationUnit(DRLParser.CompilationUnitContext ctx) {
-        return super.visitCompilationUnit(ctx);
-    }
 
     @Override
     public Object visitPackagedef(DRLParser.PackagedefContext ctx) {
@@ -102,7 +95,7 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
         DRLParser.FormalParameterListContext formalParameterListContext = formalParametersContext.formalParameterList();
         if (formalParameterListContext != null) {
             List<DRLParser.FormalParameterContext> formalParameterContexts = formalParameterListContext.formalParameter();
-            formalParameterContexts.stream().forEach(formalParameterContext -> {
+            formalParameterContexts.forEach(formalParameterContext -> {
                 DRLParser.TypeTypeContext typeTypeContext = formalParameterContext.typeType();
                 DRLParser.VariableDeclaratorIdContext variableDeclaratorIdContext = formalParameterContext.variableDeclaratorId();
                 functionDescr.addParameter(typeTypeContext.getText(), variableDeclaratorIdContext.getText());
@@ -125,49 +118,67 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
 
     @Override
     public Object visitLhs(DRLParser.LhsContext ctx) {
-        currentConstructStack.push(currentRule.getLhs());
-        try {
-            return super.visitLhs(ctx);
-        } finally {
-            currentConstructStack.pop();
+        if (ctx.lhsExpression() != null) {
+            List<BaseDescr> descrList = visitLhsExpression(ctx.lhsExpression());
+            descrList.forEach(descr -> currentRule.getLhs().addDescr(descr));
+            slimRootDescr(currentRule.getLhs());
         }
+        return null; // lhs is done for a rule
+    }
+
+    private void slimRootDescr(AndDescr root) {
+        List<BaseDescr> descrList = new ArrayList<>(root.getDescrs());
+        root.getDescrs().clear();
+        descrList.forEach(root::addOrMerge); // This slims down nested AndDescr
     }
 
     @Override
-    public Object visitLhsPatternBind(DRLParser.LhsPatternBindContext ctx) {
+    public List<BaseDescr> visitLhsExpression(DRLParser.LhsExpressionContext ctx) {
+        return visitChildrenWithDescrAggregator(ctx, new ArrayList<>());
+    }
+
+    @Override
+    public BaseDescr visitLhsPatternBind(DRLParser.LhsPatternBindContext ctx) {
         if (ctx.lhsPattern().size() == 1) {
-            Object result = super.visitLhsPatternBind(ctx);
-            ConditionalElementDescr parentDescr = currentConstructStack.peek();
-            PatternDescr patternDescr = (PatternDescr) parentDescr.getDescrs().get(parentDescr.getDescrs().size() - 1);
-            if (ctx.label() != null) {
-                patternDescr.setIdentifier(ctx.label().IDENTIFIER().getText());
-            }
-            return result;
+            return getSinglePatternDescr(ctx);
         } else if (ctx.lhsPattern().size() > 1) {
-            OrDescr orDescr = new OrDescr();
-            currentConstructStack.peek().addDescr(orDescr);
-            currentConstructStack.push(orDescr);
-            try {
-                Object result = super.visitLhsPatternBind(ctx);
-                List<? extends BaseDescr> descrs = orDescr.getDescrs();
-                for (BaseDescr descr : descrs) {
-                    PatternDescr patternDescr = (PatternDescr) descr;
-                    if (ctx.label() != null) {
-                        patternDescr.setIdentifier(ctx.label().IDENTIFIER().getText());
-                    }
-                }
-                return result;
-            } finally {
-                currentConstructStack.pop();
-            }
+            return getOrDescrWithMultiplePatternDescr(ctx);
         } else {
             throw new IllegalStateException("ctx.lhsPattern().size() == 0 : " + ctx.getText());
         }
     }
 
+    private PatternDescr getSinglePatternDescr(DRLParser.LhsPatternBindContext ctx) {
+        Optional<BaseDescr> optPatternDescr = visitFirstChild(ctx);
+        PatternDescr patternDescr = optPatternDescr.filter(PatternDescr.class::isInstance)
+                .map(PatternDescr.class::cast)
+                .orElseThrow(() -> new IllegalStateException("lhsPatternBind must have at least one lhsPattern : " + ctx.getText()));
+        if (ctx.label() != null) {
+            patternDescr.setIdentifier(ctx.label().IDENTIFIER().getText());
+        }
+        return patternDescr;
+    }
+
+    private OrDescr getOrDescrWithMultiplePatternDescr(DRLParser.LhsPatternBindContext ctx) {
+        OrDescr orDescr = new OrDescr();
+        List<BaseDescr> patternList = visitChildrenWithDescrAggregator(ctx, new ArrayList<>());
+        patternList.stream()
+                .filter(PatternDescr.class::isInstance)
+                .map(PatternDescr.class::cast)
+                .forEach(patternDescr -> {
+                    if (ctx.label() != null) {
+                        patternDescr.setIdentifier(ctx.label().IDENTIFIER().getText());
+                    }
+                    orDescr.addDescr(patternDescr);
+                });
+
+        return orDescr;
+    }
+
     @Override
-    public Object visitLhsPattern(DRLParser.LhsPatternContext ctx) {
-        currentPattern = new PatternDescr(ctx.objectType.getText());
+    public PatternDescr visitLhsPattern(DRLParser.LhsPatternContext ctx) {
+        PatternDescr patternDescr = new PatternDescr(ctx.objectType.getText());
+        currentPattern = patternDescr;
         if (ctx.patternSource() != null) {
             String expression = ctx.patternSource().getText();
             FromDescr from = new FromDescr();
@@ -175,14 +186,13 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
             from.setResource(currentPattern.getResource());
             currentPattern.setSource(from);
         }
-        Object result = super.visitLhsPattern(ctx);
-        currentConstructStack.peek().addDescr(currentPattern);
+        super.visitLhsPattern(ctx);
         currentPattern = null;
-        return result;
+        return patternDescr;
     }
 
     @Override
-    public Object visitConstraint(DRLParser.ConstraintContext ctx) {
+    public ExprConstraintDescr visitConstraint(DRLParser.ConstraintContext ctx) {
         Object constraint = super.visitConstraint(ctx);
         if (constraint != null) {
             String constraintString = constraint.toString();
@@ -190,15 +200,16 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
             if (label != null) {
                 constraintString = label.getText() + constraintString;
             }
-            ExprConstraintDescr constr = new ExprConstraintDescr(constraintString);
-            constr.setType(ExprConstraintDescr.Type.NAMED);
-            currentPattern.addConstraint(constr);
+            ExprConstraintDescr constraintDescr = new ExprConstraintDescr(constraintString);
+            constraintDescr.setType(ExprConstraintDescr.Type.NAMED);
+            currentPattern.addConstraint(constraintDescr);
+            return constraintDescr;
         }
         return null;
     }
 
     @Override
-    public Object visitDrlExpression(DRLParser.DrlExpressionContext ctx) {
+    public String visitDrlExpression(DRLParser.DrlExpressionContext ctx) {
         return ctx.children.stream()
                 .map(c -> c instanceof TerminalNode ? c : c.accept(this))
                 .filter(Objects::nonNull)
@@ -207,7 +218,7 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitDrlPrimary(DRLParser.DrlPrimaryContext ctx) {
+    public String visitDrlPrimary(DRLParser.DrlPrimaryContext ctx) {
         return ctx.children.stream()
                 .map(c -> c instanceof TerminalNode ? c : c.accept(this))
                 .filter(Objects::nonNull)
@@ -216,19 +227,19 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitDrlIdentifier(DRLParser.DrlIdentifierContext ctx) {
+    public String visitDrlIdentifier(DRLParser.DrlIdentifierContext ctx) {
         return ctx.getText();
     }
 
     @Override
-    public Object visitDrlLiteral(DRLParser.DrlLiteralContext ctx) {
+    public String visitDrlLiteral(DRLParser.DrlLiteralContext ctx) {
         ParseTree node = ctx;
         while (true) {
             if (node instanceof TerminalNode) {
                 return node.toString();
             }
             if (node.getChildCount() != 1) {
-                return super.visitDrlLiteral(ctx);
+                return super.visitDrlLiteral(ctx).toString();
             }
             node = node.getChild(0);
         }
@@ -259,43 +270,50 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitLhsExists(DRLParser.LhsExistsContext ctx) {
+    public ExistsDescr visitLhsExists(DRLParser.LhsExistsContext ctx) {
         ExistsDescr existsDescr = new ExistsDescr();
-        currentConstructStack.peek().addDescr(existsDescr);
-        currentConstructStack.push(existsDescr);
-        try {
-            return super.visitLhsExists(ctx);
-        } finally {
-            currentConstructStack.pop();
-        }
+        BaseDescr descr = visitLhsPatternBind(ctx.lhsPatternBind());
+        existsDescr.addDescr(descr);
+        return existsDescr;
     }
 
     @Override
-    public Object visitLhsNot(DRLParser.LhsNotContext ctx) {
+    public NotDescr visitLhsNot(DRLParser.LhsNotContext ctx) {
         NotDescr notDescr = new NotDescr();
-        currentConstructStack.peek().addDescr(notDescr);
-        currentConstructStack.push(notDescr);
-        try {
-            return super.visitLhsNot(ctx);
-        } finally {
-            currentConstructStack.pop();
-        }
+        BaseDescr descr = visitLhsPatternBind(ctx.lhsPatternBind());
+        notDescr.addDescr(descr);
+        return notDescr;
     }
 
     @Override
-    public Object visitLhsOr(DRLParser.LhsOrContext ctx) {
+    public BaseDescr visitLhsOr(DRLParser.LhsOrContext ctx) {
         if (!ctx.DRL_OR().isEmpty()) {
             OrDescr orDescr = new OrDescr();
-            currentConstructStack.peek().addDescr(orDescr);
-            currentConstructStack.push(orDescr);
-            try {
-                return super.visitLhsOr(ctx);
-            } finally {
-                currentConstructStack.pop();
-            }
+            List<BaseDescr> descrList = visitChildrenWithDescrAggregator(ctx, new ArrayList<>());
+            descrList.forEach(orDescr::addDescr);
+            return orDescr;
         } else {
-            return super.visitLhsOr(ctx);
+            // No DRL_OR means only one lhsAnd
+            return visitLhsAnd(ctx.lhsAnd().get(0));
         }
+    }
+
+    @Override
+    public BaseDescr visitLhsAnd(DRLParser.LhsAndContext ctx) {
+        if (!ctx.DRL_AND().isEmpty()) {
+            AndDescr andDescr = new AndDescr();
+            List<BaseDescr> descrList = visitChildrenWithDescrAggregator(ctx, new ArrayList<>());
+            descrList.forEach(andDescr::addDescr);
+            return andDescr;
+        } else {
+            // No DRL_AND means only one lhsUnary
+            return visitLhsUnary(ctx.lhsUnary().get(0));
+        }
+    }
+
+    @Override
+    public BaseDescr visitLhsUnary(DRLParser.LhsUnaryContext ctx) {
+        return (BaseDescr) visitChildren(ctx);
     }
 
     @Override
@@ -314,5 +332,31 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
         // TODO: Current DRL6Parser adds +1 for EndCharacter but it doesn't look reasonable. At the moment, I don't add. Instead, I fix unit tests.
         //       I will revisit if this is the right approach.
         descr.setEndCharacter(ctx.getStop().getStopIndex());
+    }
+
+    private List<BaseDescr> visitChildrenWithDescrAggregator(RuleNode node, List<BaseDescr> aggregator) {
+        int n = node.getChildCount();
+
+        for (int i = 0; i < n && this.shouldVisitNextChild(node, aggregator); ++i) {
+            ParseTree c = node.getChild(i);
+            Object childResult = c.accept(this);
+            if (childResult instanceof BaseDescr) {
+                aggregator.add((BaseDescr) childResult);
+            }
+        }
+        return aggregator;
+    }
+
+    private Optional<BaseDescr> visitFirstChild(RuleNode node) {
+        int n = node.getChildCount();
+
+        for (int i = 0; i < n && this.shouldVisitNextChild(node, null); ++i) {
+            ParseTree c = node.getChild(i);
+            Object childResult = c.accept(this);
+            if (childResult instanceof BaseDescr) {
+                return Optional.of((BaseDescr) childResult);
+            }
+        }
+        return Optional.empty();
     }
 }
