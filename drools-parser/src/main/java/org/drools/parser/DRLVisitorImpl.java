@@ -35,56 +35,74 @@ import static org.drools.util.StringUtils.unescapeJava;
 
 public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
 
-    private final PackageDescr packageDescr = new PackageDescr();
-
-    private RuleDescr currentRule;
-    private PatternDescr currentPattern;
-
     @Override
-    public Object visitPackagedef(DRLParser.PackagedefContext ctx) {
-        packageDescr.setName(getTextWithoutErrorNode(ctx.name));
-        return super.visitPackagedef(ctx);
+    public PackageDescr visitCompilationUnit(DRLParser.CompilationUnitContext ctx) {
+        PackageDescr packageDescr = new PackageDescr();
+        if (ctx.packagedef() != null) {
+            packageDescr.setName(getTextWithoutErrorNode(ctx.packagedef().name));
+        }
+        List<BaseDescr> descrList = visitDescrChildren(ctx);
+        applyChildrenDescrs(packageDescr, descrList);
+        return packageDescr;
+    }
+
+    private void applyChildrenDescrs(PackageDescr packageDescr, List<BaseDescr> descrList) {
+        descrList.forEach(descr -> {
+            if (descr instanceof UnitDescr) {
+                packageDescr.setUnit((UnitDescr) descr);
+            } else if (descr instanceof GlobalDescr) {
+                packageDescr.addGlobal((GlobalDescr) descr);
+            } else if (descr instanceof FunctionImportDescr) {
+                packageDescr.addFunctionImport((FunctionImportDescr) descr);
+            } else if (descr instanceof ImportDescr) {
+                packageDescr.addImport((ImportDescr) descr);
+            } else if (descr instanceof FunctionDescr) {
+                FunctionDescr functionDescr = (FunctionDescr) descr;
+                functionDescr.setNamespace(packageDescr.getNamespace());
+                AttributeDescr dialect = packageDescr.getAttribute("dialect");
+                if (dialect != null) {
+                    functionDescr.setDialect(dialect.getValue());
+                }
+                packageDescr.addFunction(functionDescr);
+            } else if (descr instanceof AttributeDescr) {
+                packageDescr.addAttribute((AttributeDescr) descr);
+            } else if (descr instanceof RuleDescr) {
+                packageDescr.addRule((RuleDescr) descr);
+            }
+        });
     }
 
     @Override
-    public Object visitUnitdef(DRLParser.UnitdefContext ctx) {
-        packageDescr.setUnit(new UnitDescr(ctx.name.getText()));
-        return super.visitUnitdef(ctx);
+    public UnitDescr visitUnitdef(DRLParser.UnitdefContext ctx) {
+        return new UnitDescr(ctx.name.getText());
     }
 
     @Override
-    public Object visitGlobaldef(DRLParser.GlobaldefContext ctx) {
+    public GlobalDescr visitGlobaldef(DRLParser.GlobaldefContext ctx) {
         GlobalDescr globalDescr = new GlobalDescr(ctx.drlIdentifier().getText(), ctx.type().getText());
         populateStartEnd(globalDescr, ctx);
-        packageDescr.addGlobal(globalDescr);
-        return super.visitGlobaldef(ctx);
+        return globalDescr;
     }
 
     @Override
-    public Object visitImportdef(DRLParser.ImportdefContext ctx) {
+    public ImportDescr visitImportdef(DRLParser.ImportdefContext ctx) {
         String target = ctx.drlQualifiedName().getText() + (ctx.MUL() != null ? ".*" : "");
         if (ctx.DRL_FUNCTION() != null || ctx.STATIC() != null) {
             FunctionImportDescr functionImportDescr = new FunctionImportDescr();
             functionImportDescr.setTarget(target);
             populateStartEnd(functionImportDescr, ctx);
-            packageDescr.addFunctionImport(functionImportDescr);
+            return functionImportDescr;
         } else {
             ImportDescr importDescr = new ImportDescr();
             importDescr.setTarget(target);
             populateStartEnd(importDescr, ctx);
-            packageDescr.addImport(importDescr);
+            return importDescr;
         }
-        return super.visitImportdef(ctx);
     }
 
     @Override
-    public Object visitFunctiondef(DRLParser.FunctiondefContext ctx) {
+    public FunctionDescr visitFunctiondef(DRLParser.FunctiondefContext ctx) {
         FunctionDescr functionDescr = new FunctionDescr();
-        functionDescr.setNamespace(packageDescr.getNamespace());
-        AttributeDescr dialect = packageDescr.getAttribute("dialect");
-        if (dialect != null) {
-            functionDescr.setDialect(dialect.getValue());
-        }
         if (ctx.typeTypeOrVoid() != null) {
             functionDescr.setReturnType(ctx.typeTypeOrVoid().getText());
         } else {
@@ -102,39 +120,73 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
             });
         }
         functionDescr.setBody(ParserStringUtils.getTextPreservingWhitespace(ctx.block()));
-        packageDescr.addFunction(functionDescr);
-        return super.visitFunctiondef(ctx);
+        return functionDescr;
     }
 
     @Override
-    public Object visitRuledef(DRLParser.RuledefContext ctx) {
-        currentRule = new RuleDescr(safeStripStringDelimiters(ctx.name.getText()));
-        packageDescr.addRule(currentRule);
+    public RuleDescr visitRuledef(DRLParser.RuledefContext ctx) {
+        RuleDescr ruleDescr = new RuleDescr(safeStripStringDelimiters(ctx.name.getText()));
 
-        Object result = super.visitRuledef(ctx);
-        currentRule = null;
-        return result;
-    }
+        ctx.drlAnnotation().stream().map(this::visitDrlAnnotation).forEach(ruleDescr::addAnnotation);
 
-    @Override
-    public Object visitLhs(DRLParser.LhsContext ctx) {
-        if (ctx.lhsExpression() != null) {
-            List<BaseDescr> descrList = visitLhsExpression(ctx.lhsExpression());
-            descrList.forEach(descr -> currentRule.getLhs().addDescr(descr));
-            slimRootDescr(currentRule.getLhs());
+        if (ctx.attributes() != null) {
+            List<BaseDescr> descrList = visitDescrChildren(ctx.attributes());
+            descrList.stream()
+                    .filter(AttributeDescr.class::isInstance)
+                    .map(AttributeDescr.class::cast)
+                    .forEach(ruleDescr::addAttribute);
         }
-        return null; // lhs is done for a rule
+
+        if (ctx.lhs() != null) {
+            List<BaseDescr> lhsDescrList = visitLhs(ctx.lhs());
+            lhsDescrList.forEach(descr -> ruleDescr.getLhs().addDescr(descr));
+            slimLhsRootDescr(ruleDescr.getLhs());
+        }
+
+        if (ctx.rhs() != null) {
+            ruleDescr.setConsequenceLocation(ctx.rhs().getStart().getLine(), ctx.rhs().getStart().getCharPositionInLine()); // location of "then"
+            ruleDescr.setConsequence(ParserStringUtils.getTextPreservingWhitespace(ctx.rhs().consequence()));
+        }
+
+        return ruleDescr;
     }
 
-    private void slimRootDescr(AndDescr root) {
+    private void slimLhsRootDescr(AndDescr root) {
         List<BaseDescr> descrList = new ArrayList<>(root.getDescrs());
         root.getDescrs().clear();
         descrList.forEach(root::addOrMerge); // This slims down nested AndDescr
     }
 
     @Override
+    public AnnotationDescr visitDrlAnnotation(DRLParser.DrlAnnotationContext ctx) {
+        AnnotationDescr annotationDescr = new AnnotationDescr(ctx.name.getText());
+        annotationDescr.setValue(ctx.drlArguments().drlArgument(0).getText());
+        return annotationDescr;
+    }
+
+    @Override
+    public AttributeDescr visitAttribute(DRLParser.AttributeContext ctx) {
+        AttributeDescr attributeDescr = new AttributeDescr(ctx.getChild(0).getText());
+        if (ctx.getChildCount() > 1) {
+            // TODO : will likely split visitAttribute methods using labels (e.g. #stringAttribute)
+            String value = unescapeJava(safeStripStringDelimiters(ctx.getChild(1).getText()));
+            attributeDescr.setValue(value);
+        }
+        return attributeDescr;
+    }
+
+    @Override
+    public List<BaseDescr> visitLhs(DRLParser.LhsContext ctx) {
+        if (ctx.lhsExpression() != null) {
+            return visitLhsExpression(ctx.lhsExpression());
+        } else {
+            return new ArrayList<>();
+        }
+    }
+
+    @Override
     public List<BaseDescr> visitLhsExpression(DRLParser.LhsExpressionContext ctx) {
-        return visitChildrenWithDescrAggregator(ctx, new ArrayList<>());
+        return visitDescrChildren(ctx);
     }
 
     @Override
@@ -149,7 +201,7 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
     }
 
     private PatternDescr getSinglePatternDescr(DRLParser.LhsPatternBindContext ctx) {
-        Optional<BaseDescr> optPatternDescr = visitFirstChild(ctx);
+        Optional<BaseDescr> optPatternDescr = visitFirstDescrChild(ctx);
         PatternDescr patternDescr = optPatternDescr.filter(PatternDescr.class::isInstance)
                 .map(PatternDescr.class::cast)
                 .orElseThrow(() -> new IllegalStateException("lhsPatternBind must have at least one lhsPattern : " + ctx.getText()));
@@ -161,8 +213,8 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
 
     private OrDescr getOrDescrWithMultiplePatternDescr(DRLParser.LhsPatternBindContext ctx) {
         OrDescr orDescr = new OrDescr();
-        List<BaseDescr> patternList = visitChildrenWithDescrAggregator(ctx, new ArrayList<>());
-        patternList.stream()
+        List<BaseDescr> descrList = visitDescrChildren(ctx);
+        descrList.stream()
                 .filter(PatternDescr.class::isInstance)
                 .map(PatternDescr.class::cast)
                 .forEach(patternDescr -> {
@@ -178,17 +230,25 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
     @Override
     public PatternDescr visitLhsPattern(DRLParser.LhsPatternContext ctx) {
         PatternDescr patternDescr = new PatternDescr(ctx.objectType.getText());
-        currentPattern = patternDescr;
         if (ctx.patternSource() != null) {
             String expression = ctx.patternSource().getText();
             FromDescr from = new FromDescr();
             from.setDataSource(new MVELExprDescr(expression));
-            from.setResource(currentPattern.getResource());
-            currentPattern.setSource(from);
+            from.setResource(patternDescr.getResource());
+            patternDescr.setSource(from);
         }
-        super.visitLhsPattern(ctx);
-        currentPattern = null;
+        List<ExprConstraintDescr> constraintDescrList = visitConstraints(ctx.constraints());
+        constraintDescrList.forEach(patternDescr::addConstraint);
         return patternDescr;
+    }
+
+    @Override
+    public List<ExprConstraintDescr> visitConstraints(DRLParser.ConstraintsContext ctx) {
+        List<BaseDescr> descrList = visitDescrChildren(ctx);
+        return descrList.stream()
+                .filter(ExprConstraintDescr.class::isInstance)
+                .map(ExprConstraintDescr.class::cast)
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -202,7 +262,6 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
             }
             ExprConstraintDescr constraintDescr = new ExprConstraintDescr(constraintString);
             constraintDescr.setType(ExprConstraintDescr.Type.NAMED);
-            currentPattern.addConstraint(constraintDescr);
             return constraintDescr;
         }
         return null;
@@ -246,30 +305,6 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitDrlAnnotation(DRLParser.DrlAnnotationContext ctx) {
-        AnnotationDescr annotationDescr = new AnnotationDescr(ctx.name.getText());
-        annotationDescr.setValue(ctx.drlArguments().drlArgument(0).getText());
-        currentRule.addAnnotation(annotationDescr);
-        return super.visitDrlAnnotation(ctx);
-    }
-
-    @Override
-    public Object visitAttribute(DRLParser.AttributeContext ctx) {
-        AttributeDescr attributeDescr = new AttributeDescr(ctx.getChild(0).getText());
-        if (ctx.getChildCount() > 1) {
-            // TODO : will likely split visitAttribute methods using labels (e.g. #stringAttribute)
-            String value = unescapeJava(safeStripStringDelimiters(ctx.getChild(1).getText()));
-            attributeDescr.setValue(value);
-        }
-        if (currentRule != null) {
-            currentRule.addAttribute(attributeDescr);
-        } else {
-            packageDescr.addAttribute(attributeDescr);
-        }
-        return super.visitAttribute(ctx);
-    }
-
-    @Override
     public ExistsDescr visitLhsExists(DRLParser.LhsExistsContext ctx) {
         ExistsDescr existsDescr = new ExistsDescr();
         BaseDescr descr = visitLhsPatternBind(ctx.lhsPatternBind());
@@ -289,7 +324,7 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
     public BaseDescr visitLhsOr(DRLParser.LhsOrContext ctx) {
         if (!ctx.DRL_OR().isEmpty()) {
             OrDescr orDescr = new OrDescr();
-            List<BaseDescr> descrList = visitChildrenWithDescrAggregator(ctx, new ArrayList<>());
+            List<BaseDescr> descrList = visitDescrChildren(ctx);
             descrList.forEach(orDescr::addDescr);
             return orDescr;
         } else {
@@ -302,7 +337,7 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
     public BaseDescr visitLhsAnd(DRLParser.LhsAndContext ctx) {
         if (!ctx.DRL_AND().isEmpty()) {
             AndDescr andDescr = new AndDescr();
-            List<BaseDescr> descrList = visitChildrenWithDescrAggregator(ctx, new ArrayList<>());
+            List<BaseDescr> descrList = visitDescrChildren(ctx);
             descrList.forEach(andDescr::addDescr);
             return andDescr;
         } else {
@@ -316,17 +351,6 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
         return (BaseDescr) visitChildren(ctx);
     }
 
-    @Override
-    public Object visitRhs(DRLParser.RhsContext ctx) {
-        currentRule.setConsequenceLocation(ctx.getStart().getLine(), ctx.getStart().getCharPositionInLine()); // location of "then"
-        currentRule.setConsequence(ParserStringUtils.getTextPreservingWhitespace(ctx.consequence()));
-        return super.visitChildren(ctx);
-    }
-
-    public PackageDescr getPackageDescr() {
-        return packageDescr;
-    }
-
     private void populateStartEnd(BaseDescr descr, ParserRuleContext ctx) {
         descr.setStartCharacter(ctx.getStart().getStartIndex());
         // TODO: Current DRL6Parser adds +1 for EndCharacter but it doesn't look reasonable. At the moment, I don't add. Instead, I fix unit tests.
@@ -334,7 +358,8 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
         descr.setEndCharacter(ctx.getStop().getStopIndex());
     }
 
-    private List<BaseDescr> visitChildrenWithDescrAggregator(RuleNode node, List<BaseDescr> aggregator) {
+    private List<BaseDescr> visitDescrChildren(RuleNode node) {
+        List<BaseDescr> aggregator = new ArrayList<>();
         int n = node.getChildCount();
 
         for (int i = 0; i < n && this.shouldVisitNextChild(node, aggregator); ++i) {
@@ -347,7 +372,7 @@ public class DRLVisitorImpl extends DRLParserBaseVisitor<Object> {
         return aggregator;
     }
 
-    private Optional<BaseDescr> visitFirstChild(RuleNode node) {
+    private Optional<BaseDescr> visitFirstDescrChild(RuleNode node) {
         int n = node.getChildCount();
 
         for (int i = 0; i < n && this.shouldVisitNextChild(node, null); ++i) {
